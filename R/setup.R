@@ -16,7 +16,7 @@ library(fishpals)
 curl = getCurlHandle(useragent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36", followlocation = TRUE)
 
 # database connection: requires >= RSQLite 2.1.1
-db = RSQLite::dbConnect(RSQLite::SQLite(), "yb_database.sqlite")
+db = RSQLite::dbConnect(RSQLite::SQLite(), "~/Dropbox (Cramer Fish Sciences)/NewPROJECTS/AECCA-2018-YoloTelemetry/WORKING/GoogleDriveBackup20190723/yb_database.sqlite")
 
 # late-fall TagIDs to be excluded:
 latefalls <- c(31570, 13720, 13723)
