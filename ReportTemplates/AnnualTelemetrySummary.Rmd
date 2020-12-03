@@ -55,6 +55,14 @@ source("R/clean_focusyr.R")
 print(paste("Focus Year:", focus_yr, " "), quote = FALSE)
 ```
 
+# Stations and River Kilometers
+
+```{r}
+kable(
+  arrange(rename(ybt::stns, Station = GroupedStn, Rkm = rkms))
+)
+```
+
 
 # Demographic and Tagging Summaries
 <br>
