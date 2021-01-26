@@ -1,7 +1,7 @@
 ---
 title: "Annual Telemetry Summary Report"
 author: "Myfanwy Johnston"
-date: "8/25/2019"
+date: "9/10/2020"
 output:
   word_document:
     toc: yes
@@ -16,51 +16,67 @@ editor_options:
 ---
 ```{r setup, include=FALSE}
 # Note that your knit directory must be set to the project folder for the relative paths to work correctly.
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE) # set default fig
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,	warning = FALSE)
+# set default fig
 #--------------------------------------------#
-source("R/setup.R") # connects to the database, creates global variables (be aware of this!)
-library(knitr)
-library(ggridges)
-library(ggbeeswarm)
+source("R/setup.R") # will install missing packages
 library(CDECRetrieve)
+library(lubridate)
+library(knitr)
+library(ggplot2)
+library(fishpals)
+# note: tagtales, dplyr, plyr, ybt, and ggridges also required; loaded later or functions called individually
 #--------------------------------------------#
-# objects created by setup.R:
-# alltags - this is every adult fish tag in the database, including both white sturgeon and chinook
+# Global Variables
+#--------------------------------------------#
+# objects created by this section:
+# tags - this is every adult fish tag in the database, including both white sturgeon and chinook
 # chn - this is all the tagging metadata for chinook salmon
 # dep - deployments table
-# dets - all detections for tagged fish in alltags
-#--------------------------------------------#
-# parameterize report:
-focus_tg = "fca_2018" # change to tag group of interest; format: fca_yyyy
-focus_yr = 2018 # change to year of interest
+# dets2019 - all detections for tagged fish in tags current through 2019
+
+# base dropbox filepath: edit the path in quotes below with the correct filepath on your system
+base_fp = "~/NonDropboxRepos/2020-YBT-FinalReport2019/data_clean/" 
+
+# late-fall TagIDs to be excluded:
+latefalls <- c(31570, 13720, 13723)
+
+# chn: Chinook tagging metadata (includes RAMP data)
+chn = readRDS(paste0(base_fp, "setup_cleaned_chn.rds")) # created in the final report's setup.R script
+
+# All tagging metadata (including both wst and chinook)
+tags = readRDS(paste0(base_fp, "setup_cleaned_tags.rds")) # created in the final report's setup.R script
+
+# All cleaned detections
+dets = readRDS(paste0(base_fp, "clean_dets_2019_report.rds")) # created in the final report's setup.R script
+
+#-------------------------------------------------------#
+# PARAMETERIZE REPORT:
+#-------------------------------------------------------#
+
+focus_tg = "fca_2019" # change to tag group of interest; format: fca_yyyy
+focus_yr = 2019 # change to year of interest
 options(digits = 2)
-fda_dir = "~/Dropbox (Cramer Fish Sciences)/NewPROJECTS/AECCA-2018-YoloTelemetry/WORKING/YB_Vemco/" # set relative directory path to the directory that has the false detection screens
+
 #--------------------------------------------#
 # make focused datasets:
-tagmeta = alltags[alltags$TagGroup == focus_tg, ]
-detmeta = dets[dets$TagID %in% tagmeta$TagID[tagmeta$TagGroup == focus_tg] , ]
+tagmeta = tags[tags$TagGroup == focus_tg, ]
+cleandets = dets[dets$TagID %in% tagmeta$TagID[tagmeta$TagGroup == focus_tg] , ]
+cleandets = ybt::get_det_year(cleandets, "DateTimePST") # add Detyear column
 chnmeta = chn[chn$TagID %in% tagmeta$TagID[tagmeta$TagGroup == focus_tg] , ]
 #--------------------------------------------#
 # dataset checks
 stopifnot(unique(year(tagmeta$DateTagged)) == focus_yr) # will throw an error if the fish in tagmeta aren't all from the focus year
 stopifnot(sum(is.na(tagmeta[ , c("TagID", "Sp", "FL", "Sex", "TagLoc", "TagGroup")])) == 0) # throw an error if there are NAs in important columns
 
-#--------------------------------------------#
-# clean detections for this report:
-source("R/clean_focusyr.R")
-
 ```
+
+
 
 ```{r}
 print(paste("Focus Year:", focus_yr, " "), quote = FALSE)
-```
-
-# Stations and River Kilometers
-
-```{r}
-kable(
-  arrange(rename(ybt::stns, Station = GroupedStn, Rkm = rkms))
-)
 ```
 
 
@@ -72,11 +88,12 @@ kable(
 
 <br>
 ```{r sex determination}
+library(dplyr)
 
 kable(
   tagmeta %>% 
-  group_by(Sex) %>% 
-  tally() %>% 
+    group_by(Sex) %>% 
+    tally() %>% 
     mutate(Proportion = n/sum(n)) %>% 
     rename(Sex = Sex, "Number of fish" = n, Proportion = Proportion)
 )
@@ -104,21 +121,22 @@ kable(
 
 tagmeta %>% 
   ggplot(aes(x = FL, y = Sex)) +
-  geom_density_ridges(aes(fill = Sex, group = Sex), alpha = 0.5, show.legend = FALSE,
+  ggridges::geom_density_ridges(aes(fill = Sex, group = Sex), alpha = 0.5, show.legend = FALSE,
                       scale = 1) +
   scale_fill_fishpals() +
-  theme_pres() +
+  theme_report() +
   scale_y_discrete(labels = c("Female", "Male", "Unknown")) + # note these need to be listed in alphabetical order, otherwise your labels will get misdrawn
-  labs(x = "Fork Length (mm)", y = "", title = "Fork length density by sex")
+  labs(x = "Fork Length (mm)", y = "", title = "Fork length density by sex") +
+  theme(plot.title = element_text(size=11, face="bold"))
 
 ```
 
 #### Table 3. Tagging summary
 <br>
 ```{r tag location summary}
-tagmeta$`Tagging Location` = plyr::mapvalues(tagmeta$TagLoc, from = c("BLIS", "FYKE"), 
-                to = c("Below Lisbon Weir", "Fyke Trap"))
-                
+tagmeta$`Tagging Location` = plyr::mapvalues(tagmeta$TagLoc, from = c("BLIS", "PCS"), 
+                                             to = c("Below Lisbon Weir", "Fyke Trap"))
+
 kable(
   tagmeta %>% 
     group_by(`Tagging Location`) %>% 
@@ -135,19 +153,32 @@ kable(
 
 limits <- as.Date( c( as.character(paste0(focus_yr, "-09-25")), 
                       as.character(paste0(focus_yr, "-12-01"))  ) )
-tagmeta %>% 
-        ggplot(aes(x = DateTagged)) +
-        geom_bar(stat = "count", aes(fill = TagLoc)) +
-        scale_x_date(date_labels = "%b-%d", breaks = "1 week",
-                     limits = limits) +
-        scale_y_continuous(expand = expand_scale(mult = c(0, 0.05))) + # adds a little room on the y axis
-        labs(y = "", x = "", 
-             title = "Number of fish tagged by date") +
-        scale_fill_fishpals() +
-        guides(fill = guide_legend(title = "Tagging Location")) +
-        theme_pres() +
-        theme(legend.position = c(0.85, 0.75))
-        
+
+tagmeta %>%
+  ggplot(aes(x = DateTagged)) +
+  geom_bar(position = "stack",
+           width = 0.75,
+           aes(fill = TagLoc),
+           col = 'white') +
+  scale_x_date(date_labels = "%b-%d",
+               breaks = "1 week",
+               limits = limits) +
+  scale_y_continuous(breaks = c(1:5), expand = expansion(mult = c(0, 0.05))) + # adds a little room on the y axis
+  labs(y = "", x = "",
+       title = "Number of fish tagged by date") +
+  scale_fill_fishpals() +
+  guides(fill = guide_legend(title = "Tagging Location")) +
+  theme_report() +
+  theme(legend.position = "bottom") +
+  theme(
+    plot.title = element_text(size = 11, 
+                              face = "bold"),
+    axis.text.x = element_text(angle = -35, 
+                               hjust = -0.05)
+  )
+
+
+
 
 ```
 
@@ -163,10 +194,11 @@ cleandets %>%
   ggplot(aes(x = yday, y = nfish)) +
   geom_bar(stat = "identity", fill = "#1372AA", width = 0.5) + # might need to adjust width
   scale_x_date(date_labels = "%b-%Y", breaks = "1 month") +
-  scale_y_continuous(expand = expand_scale(mult = c(0, 0.05))) + # adds a little room on the y axis
-   labs(y = "", x = "", 
-        title = "Number of fish detected within Yolo Bypass") +
-  theme_pres()
+  scale_y_continuous(breaks = c(0, 4, 8, 12), expand = expansion(mult = c(0, 0.05))) + # adds a little room on the y axis
+  labs(y = "", x = "", 
+       title = "Number of fish detected within Yolo Bypass") +
+  theme_report() +
+  theme(plot.title = element_text(size=11, face="bold"))
 
 ```
 
@@ -175,15 +207,16 @@ cleandets %>%
 ```{r nfish by date and loc}
 tagmeta %>% 
   group_by(TagLoc, DateTagged) %>% 
-  tally(n()) %>% 
+  tally() %>% 
   arrange(DateTagged) -> rt
 
-rt <- padr::pad(rt)
-rt$n[is.na(rt$n)] <- 0
-cleandets <- get_det_year(cleandets, "DateTimePST") # add detection year
+rt <- padr::pad(rt, group = "TagLoc", start_val = as.Date(min(rt$DateTagged)),
+                end_val = as.Date(max(rt$DateTagged))) 
 
-limits = as.Date(c(get_det_window(dets_df = cleandets, "DateTimePST")$first_det,
-           get_det_window(dets_df = cleandets, "DateTimePST")$last_det))
+rt$n[is.na(rt$n)] <- 0
+
+limits = as.Date(c(ybt::get_det_window(dets_df = cleandets, "DateTimePST")$first_det,
+                   ybt::get_det_window(dets_df = cleandets, "DateTimePST")$last_det))
 
 num_fish_in_sys <- cleandets %>% 
   mutate(date = as.Date(DateTimePST)) %>% 
@@ -199,16 +232,17 @@ rt %>%
   ungroup() %>% 
   ggplot(aes(x = DateTagged, y = roll_total)) +
   geom_bar(aes(fill = TagLoc), stat = "identity", 
-           width = 0.55) +
+           width = 0.5) +
   scale_x_date(limits = limits) +
   scale_fill_fishpals() +
-        guides(fill = guide_legend(title = "Tagging Location")) +
-        theme_pres() +
-        theme(legend.position = "bottom") +
-  geom_point(data = num_fish_in_sys, aes(x = date, y = nfish)) +
+  guides(fill = guide_legend(title = "Tagging Location")) +
+  theme_report() +
+  theme(legend.position = "bottom") +
+  geom_point(data = num_fish_in_sys, aes(x = date, y = nfish), size = 0.90) +
   labs(x = "Date of Tagging", y = "Cumulative total fish tagged", 
        title = "Cumulative Number of fish tagged by date and location",
-       subtitle = "Black dots = number of tagged fish detected in system")
+       subtitle = "Black dots = number of tagged fish detected in system") +
+  theme(plot.title = element_text(size=11, face="bold"))
 
 
 ```
@@ -217,17 +251,28 @@ rt %>%
 <br>
 ```{r nfish by riverkm}
 
-cleandets %>% 
-  group_by(rkms) %>% 
-  summarise(nfish = length(unique(TagID))) %>% 
-  mutate(tagstn = ifelse(rkms == 135.4 , "yes", "no")) %>% 
-  ggplot(aes(x = factor(rkms), y = nfish)) +
-  geom_bar(stat = "identity", aes(fill = tagstn), show.legend = FALSE, width = 0.5) +
-  theme_pres() +
-  scale_fill_fishpals() +
-  labs(x = "Receivers by river kilometer", y = "Number of individuals detected",
-       title = "Number of unique fish detected by river kilometer",
-       subtitle = "Highlighted bar = Lisbon Weir tagging location")
+cleandets %>%
+group_by(rkms) %>%
+summarise(nfish = length(unique(TagID))) %>%
+mutate(tagstn = ifelse(rkms == 135.4 , "yes", "no")) %>%
+ggplot(aes(x = factor(rkms), y = nfish)) +
+geom_bar(
+stat = "identity",
+aes(fill = tagstn),
+show.legend = FALSE,
+width = 0.5
+) +
+theme_report() +
+scale_fill_fishpals() +
+labs(
+x = "Receivers by river kilometer",
+y = "Number of individuals detected",
+title = "Number of unique fish detected by river kilometer",
+subtitle = "Highlighted bar = Lisbon Weir tagging location"
+) +
+theme(axis.text.x = element_text(angle = -35, vjust = -0.05,  size = 8.5),
+      axis.text.y = element_text(size = 9)) +
+theme(plot.title = element_text(size = 11, face = "bold"))
 
 ```
 <br>
@@ -244,9 +289,24 @@ Handling time is defined as the number of minutes elapsed between capture and fi
 <br>
 
 ```{r handling time}
-chnmeta$ss = ymd_hms(as.character(paste(chnmeta$DateTagged, chnmeta$TOC), " "))
-chnmeta$se = ymd_hms(as.character(paste(chnmeta$DateTagged, chnmeta$TOR), " "))
-chnmeta$ht = as.numeric(chnmeta$se - chnmeta$ss)
+# add seconds to time tagged
+chnmeta$ss = force_tz(
+               ymd_hms(
+                  paste0(
+                      paste(as.character(chnmeta$DateTagged), 
+                            as.character(chnmeta$TOC), sep = " "), 
+                ":00")),
+              "Pacific/Pitcairn")
+
+chnmeta$se = force_tz(
+               ymd_hms(
+                  paste0(
+                      paste(as.character(chnmeta$DateTagged), 
+                            as.character(chnmeta$TOR), sep = " "), 
+                ":00")),
+              "Pacific/Pitcairn")
+
+chnmeta$ht = as.numeric(as.duration(interval(chnmeta$ss, chnmeta$se)), "minutes")
 
 kable(
   chnmeta %>% 
@@ -267,14 +327,14 @@ kable(
 
 kable(
   chnmeta %>% 
-  select(TagID, TailGrab, BodyFlex, HeadComplex, VOR, Orientation) %>% 
-  tidyr::pivot_longer(-TagID, 
-                      names_to = "RAMP_type",
-                      values_to = "RAMP_score") %>% 
-  group_by(RAMP_type) %>% 
-  summarise(`Average Score` = mean(RAMP_score, na.rm = TRUE),
-            `Median Score` = median(RAMP_score, na.rm = TRUE)) %>% 
-  rename("RAMP Criteria" = RAMP_type)
+    select(TagID, TailGrab, BodyFlex, HeadComplex, VOR, Orientation) %>% 
+    tidyr::pivot_longer(-TagID, 
+                        names_to = "RAMP_type",
+                        values_to = "RAMP_score") %>% 
+    group_by(RAMP_type) %>% 
+    summarise(`Average Score` = mean(RAMP_score, na.rm = TRUE),
+              `Median Score` = median(RAMP_score, na.rm = TRUE)) %>% 
+    rename("RAMP Criteria" = RAMP_type)
 )
 ```
 <br>
@@ -285,15 +345,15 @@ kable(
 ```{r RAMP aggregate score tally}
 kable(
   chnmeta %>% 
-  select(TagID, TailGrab, BodyFlex, HeadComplex, VOR, Orientation) %>% 
-  tidyr::pivot_longer(-TagID, 
-                      names_to = "RAMP_type",
-                      values_to = "RAMP_score") %>% 
-  group_by(TagID) %>% 
-  summarise(aggregate = sum(RAMP_score)) %>% 
-  group_by(aggregate) %>% 
-  tally() %>% 
-    mutate(`Proportion of fish` = (n/sum(n)))
+    select(TagID, TailGrab, BodyFlex, HeadComplex, VOR, Orientation) %>% 
+    tidyr::pivot_longer(-TagID, 
+                        names_to = "RAMP_type",
+                        values_to = "RAMP_score") %>% 
+    group_by(TagID) %>% 
+    summarise(Aggregate = sum(RAMP_score)) %>% 
+    group_by(Aggregate) %>% 
+    summarise(`Total N Fish` = n()) %>% 
+    mutate(`Proportion of fish` = (`Total N Fish`/sum(`Total N Fish`)))
 )
 
 ```
@@ -308,7 +368,7 @@ kable(
 
 <br>
 ```{r avg LIS daily flow}
-lis <- get_detyear_cdec(detyear = focus_yr, 
+lis <- ybt::get_detyear_cdec(detyear = focus_yr, 
                         detsdf = cleandets, 
                         timecol = "DateTimePST",
                         cdecstn = "LIS",
@@ -323,23 +383,24 @@ rtt <- rt %>% filter(n > 0) %>% rename(date = DateTagged)
 
 lis %>% 
   ggplot(aes(x = date, y = mean_flow)) +
-    geom_line() +
+  geom_line() +
   geom_point(data = rtt, aes(x = date, y = 0), color = "red3") +
-  theme_pres() +
+  theme_report() +
   labs(x = "", y = "Average daily flow (cfs)",
        title = "Average daily flow at Lisbon Weir",
-       subtitle = "Dot = tagging event")
+       subtitle = "Dot = tagging event") +
+  theme(plot.title = element_text(size=11, face="bold"))
 
 ```
 
 #### Figure 7
 <br>
 ```{r avg LIS daily temp}
-listemp <- get_detyear_cdec(detyear = focus_yr, 
-                        detsdf = cleandets, 
-                        timecol = "DateTimePST",
-                        cdecstn = "LIS",
-                        sensor = 25, durtype = "E")
+listemp <- ybt::get_detyear_cdec(detyear = focus_yr, 
+                            detsdf = cleandets, 
+                            timecol = "DateTimePST",
+                            cdecstn = "LIS",
+                            sensor = 25, durtype = "E")
 
 listemp <- listemp %>% 
   filter(parameter_value != 99999) %>% 
@@ -350,13 +411,14 @@ listemp <- listemp %>%
 
 listemp %>% 
   ggplot(aes(x = date, y = mean_temp)) +
-    geom_line() +
+  geom_line() +
   geom_point(data = rtt, aes(x = date, y = mean(listemp$mean_temp)), color = "red3") +
-  theme_pres() +
+  theme_report() +
   labs(x = "", 
        y = "Average daily temperature (C)",
        title = "Average daily temperature at Lisbon Weir",
-       subtitle = "Dot = tagging event")
+       subtitle = "Dot = tagging event") +
+  theme(plot.title = element_text(size=11, face="bold"))
 
 ```
 
@@ -364,11 +426,11 @@ listemp %>%
 <br>
 ```{r avg LIS daily DO}
 
-lisdo <- get_detyear_cdec(detyear = focus_yr, 
-                        detsdf = cleandets, 
-                        timecol = "DateTimePST",
-                        cdecstn = "LIS",
-                        sensor = 61, durtype = "E")
+lisdo <- ybt::get_detyear_cdec(detyear = focus_yr, 
+                          detsdf = cleandets, 
+                          timecol = "DateTimePST",
+                          cdecstn = "LIS",
+                          sensor = 61, durtype = "E")
 
 lisdo <- lisdo %>% 
   mutate(date = as.Date(datetime)) %>% 
@@ -377,13 +439,14 @@ lisdo <- lisdo %>%
 
 lisdo %>% 
   ggplot(aes(x = date, y = mean_do)) +
-    geom_line() +
+  geom_line() +
   geom_point(data = rtt, aes(x = date, y = mean(lisdo$mean_do, na.rm = TRUE)), color = "red3") +
-  theme_pres() +
+  theme_report() +
   labs(x = "", 
        y = "Average daily DO",
        title = "Average daily dissolved oxygen at Lisbon Weir",
-       subtitle = "Dot = tagging event")
+       subtitle = "Dot = tagging event") +
+  theme(plot.title = element_text(size=11, face="bold"))
 
 ```
 
@@ -404,13 +467,19 @@ listemp %>%
   left_join(rt) %>% 
   filter(!is.na(aggregate)) %>% 
   ggplot(aes(x = mean_temp, y = factor(aggregate))) +
-  geom_beeswarm(aes(color = factor(aggregate)), 
-                    groupOnX = FALSE, size = 2.5, cex = 4.5, priority = "none",
+  ggbeeswarm::geom_beeswarm(aes(color = factor(aggregate)), 
+                groupOnX = FALSE, 
+                size = 2, 
+                cex = 4.5,
+                priority = "none",
+                alpha = 0.75,
                 show.legend = FALSE) +
   theme_pres() +
   scale_color_fishpals() +
   labs(x = "Average daily mean temperature (C)", y = "Aggregate RAMP score",
-       title = "Aggregate RAMP score vs. Mean Daily Temperature (C) at Lisbon Weir")
+       title = "Aggregate RAMP score vs.",
+       subtitle = "Mean Daily Temperature (C) at Lisbon Weir") +
+  theme(plot.title = element_text(size=11, face="bold"),plot.subtitle = element_text(size=11, face="bold"))
 
 ```
 
@@ -418,37 +487,61 @@ listemp %>%
 <br>
 ```{r DO vs ramp}
 
-lisdo %>% 
-  left_join(rt) %>% 
-  filter(!is.na(aggregate)) %>% 
+lisdo %>%
+  left_join(rt) %>%
+  filter(!is.na(aggregate)) %>%
   ggplot(aes(x = mean_do, y = factor(aggregate))) +
-  geom_beeswarm(aes(color = factor(aggregate)), 
-                    groupOnX = FALSE, size = 2.5, cex = 4.5, priority = "none",
-                show.legend = FALSE) +
-  scale_x_continuous(breaks = c(seq(from = min(lisdo$mean_do, na.rm = TRUE),
-                                    to = max(lisdo$mean_do, na.rm = TRUE), 
-                                    by = 0.5))) +
+  ggbeeswarm::geom_beeswarm(
+    aes(color = factor(aggregate)),
+    groupOnX = FALSE,
+    size = 2,
+    alpha = 0.75,
+    cex = 4.5,
+    priority = "none",
+    show.legend = FALSE
+  ) +
+  scale_x_continuous(breaks = c(seq(
+    from = min(lisdo$mean_do, na.rm = TRUE),
+    to = max(lisdo$mean_do, na.rm = TRUE),
+    by = 0.5
+  ))) +
   theme_pres() +
   scale_color_fishpals() +
-  labs(x = "Average daily dissolved oxygen", y = "Aggregate RAMP score",
-       title = "Aggregate RAMP score vs. Mean Daily Dissolved Oxygen at Lisbon Weir")
+  labs(
+    x = "Average daily dissolved oxygen",
+    y = "Aggregate RAMP score",
+    title = "Aggregate RAMP score vs.",
+    subtitle = "Mean Daily Disolved Oxygen (mg/L) at Lisbon Weir"
+  ) +
+  theme(
+    plot.title = element_text(size = 11, face = "bold"),
+    plot.subtitle = element_text(size = 11, face = "bold")
+  )
 
 ```
 
+<br>
+<br>
+
 # Fish Movement Summaries
 <br>
-<br>
+
 
 #### Figure 11
 
 <br>
 ```{r arrivals by TOD}
 
-paths <- fishtrackr::fishpaths(cleandets, cleandets$TagID, cleandets$GroupedStn, "DateTimePST")
+paths <- tagtales::tag_tales(cleandets, 
+                             cleandets$TagID, 
+                             cleandets$GroupedStn, 
+                             "DateTimePST", 
+                             allow_overlap = TRUE) # this makes it compatible with previous years' method
+
 rel_time <- chnmeta %>% 
-  mutate(Rel_time = ymd_hms(paste(as.character(chnmeta$DateTagged), 
-                                  as.character(chnmeta$TOR), sep = " "), 
-                            tz = "Pacific/Pitcairn")) %>% 
+  mutate(Rel_time = ymd_hm(paste(as.character(chnmeta$DateTagged), 
+                                 as.character(chnmeta$TOR), sep = " "), 
+                           tz = "Pacific/Pitcairn")) %>% 
   select(TagID, Rel_time)
 
 # now add the rel datetime to the paths object
@@ -481,19 +574,24 @@ ggplot(paths_arrive24, aes(x = arrive_hour, fill = arrivedaynight)) +
   scale_fill_manual(values = c("#440154FF", "#FDE725FF"), labels = c("Night", "Day")) + 
   labs(y = "Count", title = "Arrivals at Receivers by Time of Day (PST)", caption = "Fig. 11") +
   scale_x_continuous("", breaks = seq(-0.5, 23.5), labels = seq(0,24)) + 
-  theme(legend.title = element_blank())
+  theme(legend.title = element_blank()) +
+  theme(plot.title = element_text(size=11, face="bold"))
+
 ```
 
 #### Figure 12
 <br>
 ```{r departures by TOD}
+
 ggplot(paths_depart24, aes(x = depart_hour, fill = departdaynigth)) + 
   geom_bar(width = 1, color = "gray") + 
   coord_polar(start = 0) + theme_minimal() + 
   scale_fill_manual(values = c("#440154FF", "#FDE725FF"), labels = c("Night", "Day")) + 
   labs(y = "Count", title = "Departures from Receivers by Time of Day (PST)", caption = "Fig. 12") +
   scale_x_continuous("", breaks = seq(-0.5, 23.5), labels = seq(0,24)) + 
-  theme(legend.title = element_blank())
+  theme(legend.title = element_blank()) +
+  theme(plot.title = element_text(size=11, face="bold"))
+
 
 ```
 
@@ -505,7 +603,12 @@ ggplot(paths_depart24, aes(x = depart_hour, fill = departdaynigth)) +
 
 <br>
 ```{r median residence at recs}
-fp <- fishtrackr::fishpaths(cleandets, cleandets$TagID, cleandets$GroupedStn, "DateTimePST")
+
+fp <- tagtales::tag_tales(cleandets,
+                          cleandets$TagID,
+                          cleandets$GroupedStn,
+                          "DateTimePST",
+                          allow_overlap = TRUE)
 
 fp$res = as.numeric(as.duration(interval(fp$arrival, fp$departure)), "days")
 fp$res_hrs <- fp$res*24
@@ -514,40 +617,43 @@ fp %>%
   group_by(GroupedStn) %>% 
   summarise(medianres = median(res_hrs),
             meanres = mean(res_hrs),
-            rkms = unique(rkms)) %>% 
+            rkms = unique(rkms))  %>% 
   ungroup() %>% 
-    mutate(below_barrier = case_when(GroupedStn %in% c("YBBAG4", "YBBLW", "YBBCD", "YBBWW") ~ "yes", 
-                                     TRUE ~ "no")) %>% 
+  mutate(below_barrier = case_when(GroupedStn %in% c("YBBAG4", "YBBLW", "YBBCD", "YBBWW") ~ "yes", 
+                                   TRUE ~ "no")) %>% 
   ggplot( aes(x = reorder(GroupedStn, rkms), y = medianres)) +
-    geom_bar(aes(fill = below_barrier, group = GroupedStn), width = 0.3, show.legend = FALSE, stat = "identity") +
-  theme_pres() +
+  geom_bar(aes(fill = below_barrier, group = GroupedStn), width = 0.3, show.legend = FALSE, stat = "identity") +
+  theme_report() +
   scale_fill_fishpals() +
   labs(x = "", y = "Hours", 
        title = "Median residence at receivers in Yolo Bypass array",
        subtitle = "Green bars = location is below a barrier") +
-  coord_flip()
+  coord_flip() +
+  theme(plot.title = element_text(size=11, face="bold"))
 
 ```
 
 #### Figure 14
 <br>
-```{r mean vs median residence}
+```{r mean vs median residence, fig.width = 6, fig.height = 4}
+
 fp %>% 
   group_by(GroupedStn) %>% 
   summarise(medianres = median(res_hrs),
             meanres = mean(res_hrs), 
-             rkms = unique(rkms)) %>% 
+            rkms = unique(rkms)) %>% 
   ungroup() %>% 
-    mutate(below_barrier = case_when(GroupedStn %in% c("YBBAG4", "YBBLW", "YBBCD", "YBBWW") ~ "yes", TRUE ~ "no")) %>% 
+  mutate(below_barrier = case_when(GroupedStn %in% c("YBBAG4", "YBBLW", "YBBCD", "YBBWW") ~ "yes", TRUE ~ "no")) %>% 
   ggplot( aes(x = reorder(GroupedStn, rkms), y = medianres)) +
-    geom_bar(aes(fill = below_barrier, group = GroupedStn), width = 0.3, show.legend = FALSE, stat = "identity") +
-  theme_pres() +
+  geom_bar(aes(fill = below_barrier, group = GroupedStn), width = 0.3, show.legend = FALSE, stat = "identity") +
+  theme_report() +
   scale_fill_fishpals() +
   geom_bar(aes(x = reorder(GroupedStn, medianres), y = meanres), fill = "gray20", width = 0.6, show.legend = FALSE, stat = "identity", alpha = 0.3) +
   labs(x = "", y = "Hours", 
        title = "Mean vs. median residence at receivers in Yolo Bypass array",
        subtitle = "Green bars = location is below a barrier; gray bars = mean residence") +
-  coord_flip()
+  coord_flip() +
+  theme(plot.title = element_text(size=11, face="bold"),plot.subtitle = element_text(size=11))
 
 ```
 
@@ -555,19 +661,16 @@ fp %>%
 <br>
 ```{r res by tagloc}
 
-fl <- min_and_max_stn(fp)
+fl <- ybt::min_and_max_stn(fp)
+
 fl$res = as.numeric(as.duration(interval(fl$first_det, fl$last_det)), "days")
 fl <- left_join(fl, select(chnmeta, TagID, TagLoc))
 
 fl %>%
-  # mutate(category = case_when(
-  #   last_stn %in% c("YBACD", "YBBCD", "PCSG") ~ "Putah Creek",
-  #   last_stn %in% c("YBBTD", "BCN", "BCS") ~ "Outside Yolo Bypass Array",
-  #   TRUE ~ "Yolo Bypass")) %>%
   ggplot(aes(x = TagLoc, y = res)) +
   geom_jitter(
     aes(color = TagLoc),
-    size = 2.5,
+    size = 2,
     width = 0.05,
     show.legend = FALSE,
     alpha = 0.8
@@ -576,15 +679,16 @@ fl %>%
     alpha = 0.5,
     aes(group = TagLoc),
     show.legend = FALSE,
-    width = 0.3,
-    outlier.colour = "transparent"
+    width = 0.2,
+    outlier.colour = NA
   ) +
-  theme_pres() +
+  theme_report() +
   scale_color_fishpals() +
   guides(color = guide_legend(title = NULL)) +
   theme(legend.position = "top") +
   labs(x = "", y = "Time in days from first to final detection",
-       title = "Residence time by Tagging Location")
+       title = "Residence time by Tagging Location") +
+  theme(plot.title = element_text(size=11, face="bold"),axis.title.y = element_text(size = 11))
 
 ```
 <br>
@@ -600,36 +704,82 @@ fl %>%
 ```{r rkm_plots_all, echo = F, warning = F, message = F}
 
 for(i in 1:length(unique(chnmeta$TagID))){ 
-  tag <- unique(cleandets$TagID)[i]
+  tag <- unique(chnmeta$TagID)[i]
   
   g <-
-    ggplot(fp[fp$TagID==tag, ], 
-              aes(x = DateTimePST, 
-                  y = rkms, 
-                  color = factor(TagID))) + 
-    
-    geom_point() + 
-    geom_line() + 
-    geom_hline(yintercept = 121, lty = 2) +
-    geom_text(aes(DateTimePST[1], 121, label = "RSTR", vjust = -0.5), size = 3, color = "#BBB485") +
-    geom_hline(yintercept = 135.4, lty = 2) +
-    geom_text(aes(DateTimePST[1], 
-                  135.8,
-                  label = "Lisbon Weir", 
-                  vjust = -0.5), 
-              size = 3, color = "#BBB485") +
-    geom_hline(yintercept = 106.4, lty = 2) +
-    geom_text(aes(DateTimePST[1],
-                  106.4,
-                  label = "Cache Slough Complex", 
-                  vjust = -0.5), 
-              size = 3, color = "#BBB485") + 
-    scale_color_fishpals() +     
-    labs(x = "", title = paste0("TagID: ", tag), y = "River km") + ylim(c(100, 160)) +
-    theme_pres() + 
-    theme(legend.position = "none")
+    ggplot(fp[fp$TagID == tag,],
+           aes(
+             x = DateTimePST,
+             y = rkms,
+             color = factor(TagID)
+           )) +
+    geom_point(shape = 1, size = 1.75, stroke = 0.75) +
+    geom_line() +
+    geom_hline(yintercept = 165, lty = 2, size = 0.45) +
+    geom_text(
+      aes(
+        DateTimePST[1],
+        165,
+        label = "Below Wallace Weir",
+        vjust = -0.5,
+        hjust = -0.00005
+      ),
+      size = 3,
+      color = "gray20",
+      check_overlap = TRUE
+    ) +
+    geom_hline(yintercept = 135.4, lty = 2, size = 0.45) +
+    geom_hline(yintercept = 121, lty = 2, size = 0.45) +
+    geom_text(
+      aes(
+        DateTimePST[1],
+        121,
+        label = "RSTR",
+        vjust = -0.5,
+        hjust = -0.00005
+      ),
+      size = 3,
+      color = "gray20",
+      check_overlap = TRUE
+    ) +
+    geom_hline(yintercept = 135.4, lty = 2, size = 0.45) +
+    geom_text(
+      aes(
+        DateTimePST[1],
+        135.8,
+        label = "Lisbon Weir",
+        vjust = -0.5,
+        hjust = -0.00005
+      ),
+      size = 3,
+      color = "gray20",
+      check_overlap = TRUE
+    ) +
+    geom_hline(yintercept = 106.4, lty = 2, size = 0.45) +
+    geom_text(
+      aes(
+        DateTimePST[1],
+        106.4,
+        label = "Cache Slough Complex",
+        vjust = -0.5,
+        hjust = -0.00005
+      ),
+      check_overlap = TRUE,
+      size = 3,
+      color = "gray20"
+    ) +
+    scale_color_fishpals() +
+    labs(x = "",
+         title = paste0("TagID: ", tag),
+         y = "River km") + ylim(c(100, 170)) +
+    theme_report() +
+    theme(legend.position = "none") +
+    theme(plot.title = element_text(size = 11, face = "bold"),
+          axis.text.x = element_text(angle = -30, size = 8),
+          axis.text.y = element_text(size = 8.5))
   
   plot(g)
-
+  
 }
+
 ```
