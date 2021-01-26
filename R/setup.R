@@ -4,6 +4,8 @@
 #--------------------------------------------#
 # This script installs all the necessary packages for making the reproducible telemetry report
 
+# CRAN packages
+#-------------------------------------------------------#
 CRAN.packages <- c("lubridate", 
                    "knitr", 
                    "ggplot2", 
@@ -15,16 +17,21 @@ CRAN.packages <- c("lubridate",
                    "tidyr",
                    "ggbeeswarm")
 
-github.packages <- c("fishpals", "tagtales", "ybt", "CDECRetrieve")
-
-github.package_sites <- c("Myfanwy/fishpals", "Myfanwy/tagtales", "Myfanwy/ybt", "flowwest/CDECRetrieve")
-
 
 new.packages <- CRAN.packages[!(CRAN.packages %in% installed.packages()[,"Package"])]
 
 if(length(new.packages)) install.packages(new.packages)
 
+
+# Github packages
+#-------------------------------------------------------#
+
+github.packages <- c("fishpals", "tagtales", "ybt", "CDECRetrieve")
+
+github.package_sites <- c("Myfanwy/fishpals", "Myfanwy/tagtales", "Myfanwy/ybt", "flowwest/CDECRetrieve")
+
 new.gh.pkgs <- github.packages[!(github.packages %in% installed.packages()[, "Package"])]
 
-# if this triggers an update request, select 3: nothing
+message("Note for DWR training sessions: if you see a list of packages to update, select 3: nothing")
+
 if(length(new.gh.pkgs)) devtools::install_github(github.package_sites)
