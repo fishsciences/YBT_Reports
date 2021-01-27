@@ -28,7 +28,7 @@ if(length(new.packages)) install.packages(new.packages)
 
 github.packages <- c("fishpals", "tagtales", "ybt", "CDECRetrieve")
 
-github.package_sites <- c("Myfanwy/fishpals", "Myfanwy/tagtales", "Myfanwy/ybt", "flowwest/CDECRetrieve")
+github.package_sites <- c("fishsciences/fishpals", "Myfanwy/tagtales", "Myfanwy/ybt", "flowwest/CDECRetrieve")
 
 new.gh.pkgs <- github.packages[!(github.packages %in% installed.packages()[, "Package"])]
 
